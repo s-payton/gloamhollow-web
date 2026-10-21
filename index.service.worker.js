@@ -4,7 +4,7 @@
 // Incrementing CACHE_VERSION will kick off the install event and force
 // previously cached resources to be updated from the network.
 /** @type {string} */
-const CACHE_VERSION = '1792591650|3248215';
+const CACHE_VERSION = '1792622812|4304754';
 /** @type {string} */
 const CACHE_PREFIX = 'Gloamhollow-sw-cache-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
@@ -21,10 +21,31 @@ const CACHEABLE_FILES = ["index.wasm","index.pck"];
 const FULL_CACHE = CACHED_FILES.concat(CACHEABLE_FILES);
 
 self.addEventListener('install', (event) => {
+	self.skipWaiting(); // gloamhollow patch
 	event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(CACHED_FILES)));
 });
 
 self.addEventListener('activate', (event) => {
+	// gloamhollow patch: take over open pages and, on an update, reload them into the new version.
+	const knownCaches = caches.keys(); // asked first, before the handler below deletes old caches
+	const claimed = self.clients.claim();
+	event.waitUntil(claimed);
+	Promise.all([knownCaches, claimed]).then(([keys]) => {
+		if (!keys.some((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME)) {
+			return; // first install, nothing to replace
+		}
+		// Not inside waitUntil on purpose: the reload is served by this worker, which
+		// cannot answer until activation finishes, so waiting for it here would deadlock.
+		// navigate() fails until the worker is fully active, hence the retries.
+		const reloadOpenPages = async (attemptsLeft) => {
+			const windows = await self.clients.matchAll({ type: 'window' });
+			const done = await Promise.all(windows.map((client) => client.navigate(client.url).then(() => true, () => false)));
+			if (!done.every(Boolean) && attemptsLeft > 0) {
+				setTimeout(() => reloadOpenPages(attemptsLeft - 1), 300);
+			}
+		};
+		reloadOpenPages(10);
+	});
 	event.waitUntil(caches.keys().then(
 		function (keys) {
 			// Remove old caches.
@@ -72,7 +93,7 @@ async function fetchAndCache(event, cache, isCacheable) {
 	let response = await event.preloadResponse;
 	if (response == null) {
 		// Or, go over network.
-		response = await self.fetch(event.request);
+		response = await self.fetch(event.request, { cache: 'no-cache' });
 	}
 
 	if (ENSURE_CROSSORIGIN_ISOLATION_HEADERS) {
