@@ -4,7 +4,7 @@
 // Incrementing CACHE_VERSION will kick off the install event and force
 // previously cached resources to be updated from the network.
 /** @type {string} */
-const CACHE_VERSION = '1792626730|5165513';
+const CACHE_VERSION = '1792633287|4049695';
 /** @type {string} */
 const CACHE_PREFIX = 'Gloamhollow-sw-cache-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
