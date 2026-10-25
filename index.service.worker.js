@@ -4,7 +4,7 @@
 // Incrementing CACHE_VERSION will kick off the install event and force
 // previously cached resources to be updated from the network.
 /** @type {string} */
-const CACHE_VERSION = '1792890735|4072276';
+const CACHE_VERSION = '1792891377|3541018';
 /** @type {string} */
 const CACHE_PREFIX = 'Gloamhollow-sw-cache-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
@@ -87,6 +87,24 @@ function ensureCrossOriginIsolationHeaders(response) {
  * @param {boolean} isCacheable
  * @returns {Response}
  */
+// gloamhollow patch: check a file just answered from the cache against the server, and keep
+// the server's copy when it changed (a different ETag, or Last-Modified when there is none).
+async function revalidate(cache, request, cached) {
+	try {
+		const fresh = await self.fetch(request, { cache: 'no-cache' });
+		if (!fresh.ok) {
+			return;
+		}
+		const header = fresh.headers.get('ETag') !== null ? 'ETag' : 'Last-Modified';
+		const tag = fresh.headers.get(header);
+		if (tag !== null && tag === cached.headers.get(header)) {
+			return;
+		}
+		await cache.put(request, fresh);
+	} catch (e) {
+		// offline: keep what is cached
+	}
+}
 async function fetchAndCache(event, cache, isCacheable) {
 	// Use the preloaded response, if it's there
 	/** @type { Response } */
@@ -144,6 +162,9 @@ self.addEventListener(
 				}
 				let cached = await cache.match(event.request);
 				if (cached != null) {
+					if (!isNavigate) {
+						event.waitUntil(revalidate(cache, event.request, cached)); // gloamhollow patch
+					}
 					if (ENSURE_CROSSORIGIN_ISOLATION_HEADERS) {
 						cached = ensureCrossOriginIsolationHeaders(cached);
 					}
